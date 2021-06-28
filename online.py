@@ -254,12 +254,6 @@ async def on_message(ctx):
         del active_appearance[ctx.author.id]
             
 
-
-
-
-
-
-
 async def start(ctx):
     try:
         new_entry = {"_id": ctx.author.id, "Display_Name": ctx.author.name, "Champs_Owned": {}, "RP": 0, 'Score': 0, "Items": [], 'Profile': 'https://cdn.discordapp.com/attachments/831713928198750229/858855220439941130/250.png'}
