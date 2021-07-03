@@ -21,6 +21,7 @@ timeout = []
 active_questions = {}
 active_catch = []
 active_appearance = {}
+recieved_daily = []
 
 
 class SadError(Exception):
@@ -40,6 +41,7 @@ async def on_message(ctx):
     ctx.guild
     query = { "_id": ctx.author.id}
     msg = str(ctx.content)
+    storage = []
 
     if msg.startswith(';-;'):
         following = msg[4:]
@@ -47,19 +49,32 @@ async def on_message(ctx):
         
         if following.lower() == 'start':
             await start(ctx)
-
-        elif following.startswith('guess'):
+            storage.append(True)
+        else:
+            user = collection.find(query)
+            for result in user:
+                storage.append(result)
+            if storage == []:
+                await ctx.channel.send('You do not have an account, please use ;-; start')
+        
+        if following.startswith('guess') and storage != []:
             game_choice = following[6:]
             print(f'Cut {game_choice}')
 
             if game_choice.lower() == 'champ':
                 await game_builder(ctx, 'champ', 30, guess_champ)
                     
-            if game_choice.lower() == 'item':
-                await game_builder(ctx, 'item', 40, guess_item)
+            elif game_choice.lower() == 'item':
+                await game_builder(ctx, 'item', 60, guess_item)
 
-            if game_choice.lower() == 'skin':
+            elif game_choice.lower() == 'skin':
                 await game_builder(ctx, 'skin', 50, guess_skin)
+
+            elif game_choice.lower() == 'ability':
+                await game_builder(ctx, 'skin', 150, guess_ability)
+            elif game_choice.lower() == 'bio':
+                await game_builder(ctx, 'bio', 60, guess_bio)
+
             
         elif following.lower() == 'inventory':
             user = collection.find(query)
@@ -123,7 +138,6 @@ async def on_message(ctx):
             mydoc = collection.find()
 
             for person in mydoc:
-                print(person['_id'])
                 if guild.get_member(person['_id']) is not None:
                     server.append((person['Display_Name'], int(person['Score'])))
 
@@ -132,27 +146,46 @@ async def on_message(ctx):
             if len(server) > 5:
                 server = server[:5]
             
-            message = '\n'.join(['**{} {}: {}**'.format(await league_rank(member[1])[0], member[0], member[1]) for member in server])
+            message = '\n'.join(['**{} {}: {}**'.format((await league_rank(member[1]))[0], member[0], member[1]) for member in server])
             embed= discord.Embed(title='Server Leaderboard', description = message, color=0x1881F7)
             await ctx.channel.send(embed =embed)
+
+        elif following.lower() == 'daily':
+            if ctx.author.id not in recieved_daily:
+                recieved_daily.append(ctx.author.id)
+                user = collection.find(query)
+                for result in user:
+                    user_data = result
+                rp = user_data['RP']
+                collection.update_one({"_id":ctx.author.id}, {"$set":{"RP": rp + 500}})
+                message = 'You\'ve collected your daily of 500 Silver Serpents :)'
+                embed= discord.Embed(title='Daily', description = message, color=0x274F13)
+                await ctx.channel.send(embed =embed)
+                await asyncio.sleep(86400)
+                recieved_daily.remove(ctx.author.id)
+            else:
+                message = 'Your 24 hours have not been up yet buddy :)'
+                embed= discord.Embed(title='Daily', description = message, color=0x274F13)
+                await ctx.channel.send(embed =embed)
 
 
         elif following.lower() in ['help', 'help 1']:
             embed= discord.Embed(title='Game Commands Help', color=0x274F13)
+            embed.add_field(name = ';-; start', value = 'Registers your account')
             embed.add_field(name = ';-; guess champ', value = 'Test your ability of the League of Legends champion roster for RP')
             embed.add_field(name = ';-; guess skin', value = 'Can you figure out the name of your favorite champs skin for RP?')
             embed.add_field(name = ';-; guess item', value = 'Guess the name of items in order to win RP')
             embed.set_footer(text = 'Page 1 of 3')
             embed.set_thumbnail(url = 'https://static.wikia.nocookie.net/leagueoflegends/images/1/1b/Does_Not_Compute_Emote.png/revision/latest/scale-to-width-down/256?cb=20171120235504')
-            print('hello')
             await ctx.channel.send(embed=embed)
         
         elif following.lower() == 'help 2':
             embed= discord.Embed(title='Catch Commands Help', color=0x274F13)
             embed.add_field(name = ';-; shop', value = 'Shop filled with all the capsules you could ever want')
             embed.add_field(name = ';-; shop 2', value = 'A special Shop with powerful items to boost your stats')
+            embed.add_field(name = ';-; buy [item name]', value = 'Use this to buy the goodies that are within the shop')
             embed.add_field(name = ';-; catch', value = 'Start the process to collecting your favorite champions')
-            embed.add_field(name = ';-; polymorph', value = 'Reroll a base champion into a skin using a Skin Transmogrifier(see shop)')
+            embed.add_field(name = ';-; polymorph [champ]', value = 'Reroll a base champion into a skin using a Skin Transmogrifier(see shop)')
             embed.set_footer(text = 'Page 2 of 3')
             embed.set_thumbnail(url = 'https://static.wikia.nocookie.net/leagueoflegends/images/1/1b/Does_Not_Compute_Emote.png/revision/latest/scale-to-width-down/256?cb=20171120235504')
             await ctx.channel.send(embed=embed)
@@ -166,7 +199,6 @@ async def on_message(ctx):
             embed.add_field(name = ';-; set profile [champion/skin]', value = 'Put your favorite champion as your new snazzy profile picture')
             embed.set_footer(text = 'Page 3 of 3')
             embed.set_thumbnail(url = 'https://static.wikia.nocookie.net/leagueoflegends/images/1/1b/Does_Not_Compute_Emote.png/revision/latest/scale-to-width-down/256?cb=20171120235504')
-            print('hello')
             await ctx.channel.send(embed=embed)
         
         elif following.lower() == 'profile':
@@ -175,6 +207,7 @@ async def on_message(ctx):
                 user_data = result
             score = user_data['Score']
             embed= discord.Embed(title=f'{ctx.author.name}\'s Profile:', color=0x351C75)
+            print(user_data['Profile'])
             embed.set_image(url = user_data['Profile'])
             embed.add_field(name = 'Rank', value = (await league_rank(score))[0])
             embed.add_field(name = 'RP', value = str(user_data['RP']))
@@ -199,9 +232,9 @@ async def on_message(ctx):
             else:
                 await ctx.channel.send('You do not own this champion/skin')
 
-        elif following.lower().startswith('set profile') == 'polymorph':
+        elif following.lower().startswith('polymorph'):
             try:
-                following = following.lower().split()[0]
+                following = following.lower().split('polymorph ')
                 check_1 = await check_item(ctx, 'Skin Transmogrifier')
                 if not check_1[0]:
                     await ctx.channel.send('You do not own a Skin Transmogrifier')
@@ -211,14 +244,17 @@ async def on_message(ctx):
                         await ctx.channel.send(f'You do not own {following[1].capitalize()}')
             except:
                 await ctx.channel.send(f'Wrong Usage of Command')
+        elif following.lower().startwith('guess bio'):
+            await guess_bio()
         else:
-            await ctx.channel.send(f'Command does not exist.')
-    
+            if storage != []:
+                await ctx.channel.send(f'Command does not exist.')
+
+            
     elif ctx.author.id in active_questions.keys():
         user = collection.find(query)
         for result in user:
             user_data = result
-        
 
         if ctx.content.lower() == active_questions[ctx.author.id]['Answer'].lower():
             
@@ -235,49 +271,49 @@ async def on_message(ctx):
     
 
     elif ctx.author.id in active_catch:
+        print('Hello')
         cap = await check_item(ctx, ctx.content)
-        print(f'Before {active_catch}')
         if cap[0] == True:
             active_appearance[ctx.author.id] = await summon(ctx, cap[1].split()[0].capitalize())
         else:
             await ctx.channel.send('You do not have this item, please use the catch command again')
         active_catch.remove(ctx.author.id)
-        print(f'After {active_catch}')
 
     elif ctx.author.id in active_appearance:
-        print('reached')
         cap = await check_item(ctx, ctx.content)
         if cap[0] == True:
+            print(active_appearance[ctx.author.id], cap[1])
             await attempt_catch(ctx, active_appearance[ctx.author.id], cap[1])
         else:
             await attempt_catch(ctx, active_appearance[ctx.author.id])
         del active_appearance[ctx.author.id]
             
 
+
 async def start(ctx):
     try:
-        new_entry = {"_id": ctx.author.id, "Display_Name": ctx.author.name, "Champs_Owned": {}, "RP": 0, 'Score': 0, "Items": [], 'Profile': 'https://cdn.discordapp.com/attachments/831713928198750229/858855220439941130/250.png'}
+        new_entry = {"_id": ctx.author.id, "Display_Name": ctx.author.name, "Champs_Owned": {}, "RP": 500, 'Score': 0, "Items": [], 'Profile': 'https://cdn.discordapp.com/attachments/831713928198750229/858855220439941130/250.png'}
         collection.insert_one(new_entry)
     except:
         message = "You already have an account, silly."
         await ctx.channel.send(message)
 
 async def league_rank(score):
-    if score < 100:
+    if score < 200:
         return 'Iron', 'https://img.rankedboost.com/wp-content/uploads/2014/09/Season_2019_-_Iron_1.png'
-    elif score < 500:
+    elif score < 1000:
         return 'Bronze', 'https://static.wikia.nocookie.net/leagueoflegends/images/a/ac/Season_2019_-_Bronze_2.png/revision/latest/scale-to-width-down/250?cb=20181229234911'
-    elif score  < 1000:
+    elif score  < 2000:
         return 'Silver', 'https://static.wikia.nocookie.net/leagueoflegends/images/5/56/Season_2019_-_Silver_2.png/revision/latest/scale-to-width-down/250?cb=20181229234936'
-    elif score < 2000:
+    elif score < 4000:
         return 'Gold', 'https://static.wikia.nocookie.net/leagueoflegends/images/8/8a/Season_2019_-_Gold_2.png/revision/latest/scale-to-width-down/250?cb=20181229234921'
-    elif score < 3000:
+    elif score < 6000:
         return 'Platinum', 'https://static.wikia.nocookie.net/leagueoflegends/images/a/a3/Season_2019_-_Platinum_2.png/revision/latest/scale-to-width-down/250?cb=20181229234933'
-    elif score < 5000:
-        return 'Diamond', 'https://i.pinimg.com/originals/6a/10/c7/6a10c7e84c9f4e4aa9412582d28f3fd2.png'
-    elif score < 7000:
-        return 'Master', 'https://static.wikia.nocookie.net/leagueoflegends/images/1/11/Season_2019_-_Master_1.png/revision/latest/scale-to-width-down/250?cb=20181229234929'
     elif score < 10000:
+        return 'Diamond', 'https://i.pinimg.com/originals/6a/10/c7/6a10c7e84c9f4e4aa9412582d28f3fd2.png'
+    elif score < 14000:
+        return 'Master', 'https://static.wikia.nocookie.net/leagueoflegends/images/1/11/Season_2019_-_Master_1.png/revision/latest/scale-to-width-down/250?cb=20181229234929'
+    elif score < 20000:
         return 'Grandmaster', 'https://static.wikia.nocookie.net/leagueoflegends/images/5/58/Season_2019_-_Grandmaster_2.png/revision/latest/scale-to-width-down/250?cb=20181229234924'
     else:
         return 'Challenger', 'https://static.wikia.nocookie.net/leagueoflegends/images/2/29/Season_2019_-_Challenger_2.png/revision/latest/scale-to-width-down/250?cb=20181229234915'
@@ -285,7 +321,7 @@ async def league_rank(score):
 
 async def game_builder(ctx, type: str, points: int, func):
     if ctx.author.id in timeout:
-        embed= discord.Embed(title='You have to wait 20 seconds after each game.', description = 'Sorry, we know that you have no life and are desparate for ur waifu or husbando, but we need to maintain these 20 seconds to reduce spam. ;-;', color=0x00eaff)
+        embed= discord.Embed(title='You have to wait 15 seconds after each game.', description = 'Sorry, we know that you have no life and are desparate for ur waifu or husbando, but we need to maintain these 15 seconds to reduce spam. ;-;', color=0x00eaff)
         embed.set_thumbnail(url = 'https://avatarfiles.alphacoders.com/858/85807.gif')
         await ctx.channel.send(embed = embed)
     else:
@@ -293,19 +329,19 @@ async def game_builder(ctx, type: str, points: int, func):
         active_questions[ctx.author.id] = {'Answer': answer, 'Type': type, 'Points': points, 'Correct': False}
         
         timeout.append(ctx.author.id)
-        await asyncio.sleep(20)
+        await asyncio.sleep(15)
         timeout.remove(ctx.author.id)
         
         if ctx.author.id in active_questions.keys():
             if active_questions[ctx.author.id]['Type'] == type and active_questions[ctx.author.id]['Answer'] == answer:
                 message = 'Correct Answer: {}'.format(active_questions[ctx.author.id]['Answer'])
-                embed= discord.Embed(title=f"{ctx.author.name}: Times Up", description=message, color=0x00eaff)
+                embed= discord.Embed(title=f"{ctx.author.name}: Time's Up", description=message, color=0x00eaff)
                 embed.set_thumbnail(url = 'https://img.pngio.com/filebee-sad-emotepng-sad-bee-png-256_256.png')
                 await ctx.channel.send(embed=embed)
                 del active_questions[ctx.author.id]
 
 async def shop_builder(ctx, item_name: str, user_data: dict, price: int):
-    if user_data["RP"] > price:
+    if user_data["RP"] >= price:
         updated = user_data["Items"]
         updated.append(item_name)
         collection.update_one({"_id":ctx.author.id}, {"$set":{"Items": updated}})
@@ -386,6 +422,29 @@ async def guess_skin(ctx):
     await ctx.channel.send(embed=embed)
     return skin_name
 
+async def guess_ability(ctx):
+    champ = random.choice(list(champ_ids.keys()))
+    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
+        champ_file = json.loads(f.read().decode('utf-8'))
+    ability = random.choice(champ_file['data'][champ]['spells'])
+    ability_name = ability['name']
+    ability_id = ability['id']
+    embed = discord.Embed(title = 'Guess this Ability', color=0x00eaff)
+    embed.set_image(url=f'http://ddragon.leagueoflegends.com/cdn/11.13.1/img/spell/{ability_id}.png')
+    await ctx.channel.send(embed=embed)
+    return ability_name
+
+async def guess_bio(ctx):
+    champ = random.choice(list(champ_ids.keys()))
+    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
+        champion = json.loads(f.read().decode('utf-8'))
+    message = champion['data'][champ]['blurb']
+    message = 'ChampName'.join(message.split(champ))
+    embed = discord.Embed(title = 'Guess this Bio', description= f'{message}', color=0x00eaff)
+    embed.set_image(url = 'https://64.media.tumblr.com/1317bb1da54f21509ef502bc55364660/tumblr_o01uux6ZB21ugaq3to1_1280.jpg')
+    await ctx.channel.send(embed=embed)
+    return champion['data'][champ]['name']
+
 async def summon(ctx, type, lucky = False):
     found_type = False
     if type == 'Lucky': lucky = True
@@ -400,7 +459,6 @@ async def summon(ctx, type, lucky = False):
         luck = random.randint(1, 10)
     else:
         luck = random.randint(1, 3)
-        print(luck) 
 
     if luck == 1:
         skin = random.choice(champ_file['data'][champ]['skins'][1:])
@@ -442,16 +500,21 @@ async def attempt_catch(ctx, skin_data, ability = False):
         else:
             await fail(ctx, skin_data)
     else:
-        if ability == 'Cupcake Bear Trap':
+        if ability.lower() == 'cupcake bear trap':
             if random.randint(1, 2) == 1:
                 await success(ctx, skin_data)
-        elif ability == 'Dark Binding Glyph':
+            else:
+                await fail(ctx, skin_data)
+        elif ability.lower() == 'dark binding glyph':
             if random.randint(1, 10) <= 7:
                 await success(ctx, skin_data)
             else:
                 await fail(ctx, skin_data)
-        elif ability == 'Pocket Death Realm':
+        elif ability.lower() == 'pocket death realm':
             await success(ctx, skin_data)
+        else:
+            print('Hello2')
+            pass
 
 
 async def fail(ctx, skin_data):
@@ -486,13 +549,10 @@ async def check_champ(ctx, champ):
         updated = user_data['Champs_Owned']
         del[updated[lower[champ.lower()]]]
 
-        print('hello', champ)
         with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
             champ_file = json.loads(f.read().decode('utf-8'))
         skin = random.choice(champ_file['data'][champ]['skins'][1:])
         skin_data = (champ, skin['num'], skin['name'])
-
-        print(skin_data[0], skin_data[1])
 
         embed= discord.Embed(title='Congrats', description = f'Your {champ} became {skin_data[2]}', color=0x00eaff)
         embed.set_image(url=f'https://ddragon.leagueoflegends.com/cdn/img/champion/loading/{skin_data[0]}_{skin_data[1]}.jpg')
@@ -501,15 +561,12 @@ async def check_champ(ctx, champ):
         updated[skin_data[2]] = skin_data[:2]
         collection.update_one({"_id":ctx.author.id}, {"$set":{"Champs_Owned": updated}})
 
-        #champ_skin_id_skin_name
-        
-
         collection.update_one({"_id":ctx.author.id}, {"$set":{"Champs_Owned": updated}})
         return True, champ
     else:
         updated = user_data['Items']
         updated.append('Skin Transmogrifier')
         collection.update_one({"_id":ctx.author.id}, {"$set":{"Items": updated}})
-        return False, False    
+        return False, False
 
 client.run(token)
