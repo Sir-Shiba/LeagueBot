@@ -22,6 +22,7 @@ active_questions = {}
 active_catch = []
 active_appearance = {}
 recieved_daily = []
+active_incense = []
 
 
 class SadError(Exception):
@@ -36,7 +37,7 @@ async def on_ready():
 #Discord Message
 @client.event
 async def on_message(ctx):
-    # print(f"{ctx.channel}: {ctx.author}: {ctx.author.name} {ctx.author.id}: {ctx.content}")
+    print(f"{ctx.channel}: {ctx.author}: {ctx.author.name} {ctx.author.id}: {ctx.content}")
     
     ctx.guild
     query = { "_id": ctx.author.id}
@@ -57,25 +58,32 @@ async def on_message(ctx):
             if storage == []:
                 await ctx.channel.send('You do not have an account, please use ;-; start')
         
-        if following.startswith('guess') and storage != []:
+        if msg.strip() == ';-;':
+            pass
+        
+        elif following.startswith('guess') and storage != []:
             game_choice = following[6:]
-            print(f'Cut {game_choice}')
 
             if game_choice.lower() == 'champ':
-                await game_builder(ctx, 'champ', 30, guess_champ)
+                reward = 60 if ctx.author.id in active_incense else 30
+                await game_builder(ctx, 'champ', reward, guess_champ)
                     
             elif game_choice.lower() == 'item':
-                await game_builder(ctx, 'item', 60, guess_item)
+                reward = 120 if ctx.author.id in active_incense else 60
+                await game_builder(ctx, 'item', reward, guess_item)
 
             elif game_choice.lower() == 'skin':
-                await game_builder(ctx, 'skin', 50, guess_skin)
+                reward = 100 if ctx.author.id in active_incense else 50
+                await game_builder(ctx, 'skin', reward, guess_skin)
+            
+            elif game_choice.lower() == 'bio':
+                reward = 120 if ctx.author.id in active_incense else 60
+                await game_builder(ctx, 'bio', reward, guess_bio)
 
             elif game_choice.lower() == 'ability':
-                await game_builder(ctx, 'skin', 150, guess_ability)
-            elif game_choice.lower() == 'bio':
-                await game_builder(ctx, 'bio', 60, guess_bio)
-
-            
+                reward = 300 if ctx.author.id in active_incense else 150
+                await game_builder(ctx, 'skin', reward, guess_ability)
+     
         elif following.lower() == 'inventory':
             user = collection.find(query)
             for result in user:
@@ -101,6 +109,44 @@ async def on_message(ctx):
 
             await ctx.author.send(embed= embed)
 
+            
+            embed = discord.Embed(title = 'Champ\'s Catalogue', description = message, color=0x00eaff)
+        
+        elif following.lower().startswith('sell'):
+            champ_to_sell = following[5:]
+            user = collection.find(query)
+            for result in user:
+                user_data = result
+
+            owned = user_data['Champs_Owned']
+            if champ_to_sell in owned.keys():
+                del owned[champ_to_sell]
+                collection.update_one({"_id":ctx.author.id}, {"$set":{"Champs_Owned": owned}})
+                collection.update_one({"_id":ctx.author.id}, {"$set":{"RP": user_data['RP'] + 100}})
+                message = 'Sucessfully sold for 100 Silver Serpents'
+            else:    
+                message = 'You do now own such champion or skin, stop trying to scam us.'
+            embed = discord.Embed(title = 'Selling', description = message, color=0x00eaff)
+            await ctx.channel.send(embed=embed) 
+        
+        elif following.lower().startswith('insult'):
+            user = collection.find(query)
+            for result in user:
+                user_data = result
+            rp = user_data['RP']
+            if rp < 50:
+                await ctx.channel.send('I don\'t work free buddy') 
+            else:
+                person = following[7:]
+                if person.startswith('<@!'):
+                    collection.update_one({"_id":ctx.author.id}, {"$set":{"RP": user_data['RP'] - 50}})
+                    person = person.strip('@<>!')
+                    await insult(ctx, person)
+                else:
+                    await ctx.channel.send('Invalid Usage') 
+        elif following.lower().startswith('pick game'):
+            await pick_game(ctx)
+
         elif following.lower() in ['shop', 'shop 1']:
             embed= discord.Embed(title='Bilgewater\'s Black Market', color=0x274F13)
             embed.add_field(name = '**Tank Capsule**------------->250 Silver Serpents', value = 'A Mystery Box for Tank Champions')
@@ -119,6 +165,7 @@ async def on_message(ctx):
             embed.add_field(name = "**Dark Binding Glyph**\n---------->150 Silver Serpents", value = 'THEY CANT MOVE, unless')
             embed.add_field(name = '**Pocket Death Realm**\n-------->250 Silver Serpents', value = 'Catching on easy mode')
             embed.add_field(name = '**Skin Transmogrifier**\n--------->1000 Silver Serpents', value = 'Imagine being poor and having base skin')
+            embed.add_field(name = '**Incense**\n--------->600 Silver Serpents', value = 'Imagine earning more Silver Serpents')
             embed.set_footer(text = 'Page 2 of 2')
             embed.set_thumbnail(url = 'https://static.wikia.nocookie.net/leagueoflegends/images/6/60/Shopkeeper_Render_old3.png/revision/latest/scale-to-width-down/250?cb=20200601034904')
             await ctx.channel.send(embed=embed)
@@ -167,14 +214,35 @@ async def on_message(ctx):
                 message = 'Your 24 hours have not been up yet buddy :)'
                 embed= discord.Embed(title='Daily', description = message, color=0x274F13)
                 await ctx.channel.send(embed =embed)
+        
+        elif following.lower() == 'incense':
+            check_1 = await check_item(ctx, 'incense')
+            if not check_1[0]:
+                await ctx.channel.send('You do not own Incense')
+            else:
+                if ctx.author.id not in active_incense:
+                    await ctx.channel.send('Incense activated: 5 minutes of double points :D')
+                    active_incense.append(ctx.author.id)
+                    await asyncio.sleep(300)
+                    active_incense.remove(ctx.author.id)
+                else:
+                    await ctx.channel.send('There is already an active Incense')
+                    for result in user:
+                        user_data = result
+                    updated = user_data['Items']
+                    updated.append('Incense')
+                    collection.update_one({"_id":ctx.author.id}, {"$set":{"Items": updated}})
+                                
 
 
         elif following.lower() in ['help', 'help 1']:
             embed= discord.Embed(title='Game Commands Help', color=0x274F13)
             embed.add_field(name = ';-; start', value = 'Registers your account')
             embed.add_field(name = ';-; guess champ', value = 'Test your ability of the League of Legends champion roster for RP')
-            embed.add_field(name = ';-; guess skin', value = 'Can you figure out the name of your favorite champs skin for RP?')
+            embed.add_field(name = ';-; guess skin', value = 'Can you figure out the name of your favorite champs skin for RP')
             embed.add_field(name = ';-; guess item', value = 'Guess the name of items in order to win RP')
+            embed.add_field(name = ';-; guess bio', value = 'Guess the short story of a champion in order to earn RP')
+            embed.add_field(name = ';-; guess ability', value = 'Earn the largest amount of RP yet, with the unforeseen names of champs abilities')
             embed.set_footer(text = 'Page 1 of 3')
             embed.set_thumbnail(url = 'https://static.wikia.nocookie.net/leagueoflegends/images/1/1b/Does_Not_Compute_Emote.png/revision/latest/scale-to-width-down/256?cb=20171120235504')
             await ctx.channel.send(embed=embed)
@@ -186,6 +254,7 @@ async def on_message(ctx):
             embed.add_field(name = ';-; buy [item name]', value = 'Use this to buy the goodies that are within the shop')
             embed.add_field(name = ';-; catch', value = 'Start the process to collecting your favorite champions')
             embed.add_field(name = ';-; polymorph [champ]', value = 'Reroll a base champion into a skin using a Skin Transmogrifier(see shop)')
+            embed.add_field(name = ';-; incense', value = 'After buying from shop, activating increases your loot by 2x')
             embed.set_footer(text = 'Page 2 of 3')
             embed.set_thumbnail(url = 'https://static.wikia.nocookie.net/leagueoflegends/images/1/1b/Does_Not_Compute_Emote.png/revision/latest/scale-to-width-down/256?cb=20171120235504')
             await ctx.channel.send(embed=embed)
@@ -194,9 +263,11 @@ async def on_message(ctx):
             embed= discord.Embed(title='Game Commands Help', color=0x274F13)
             embed.add_field(name = ';-; inventory', value = 'See your current inventory full of powerful items')
             embed.add_field(name = ';-; champs', value = 'be sent a private message of all the champs you own')
-            embed.add_field(name = ';-; leader board', value = 'See how you stack up against your friends when it comes to points')
+            embed.add_field(name = ';-; leaderboard', value = 'See how you stack up against your friends when it comes to points')
             embed.add_field(name = ';-; profile', value = 'See Your Rank, RP, Points, and favorite champion all in one spot')
             embed.add_field(name = ';-; set profile [champion/skin]', value = 'Put your favorite champion as your new snazzy profile picture')
+            embed.add_field(name = ';-; sell [champion/skin]', value = 'Sell a champion or skin for 100 Silver Serpents')
+            embed.add_field(name = ';-; insult [@person name]', value = 'Get the best insults this side of Shurima')
             embed.set_footer(text = 'Page 3 of 3')
             embed.set_thumbnail(url = 'https://static.wikia.nocookie.net/leagueoflegends/images/1/1b/Does_Not_Compute_Emote.png/revision/latest/scale-to-width-down/256?cb=20171120235504')
             await ctx.channel.send(embed=embed)
@@ -210,7 +281,7 @@ async def on_message(ctx):
             print(user_data['Profile'])
             embed.set_image(url = user_data['Profile'])
             embed.add_field(name = 'Rank', value = (await league_rank(score))[0])
-            embed.add_field(name = 'RP', value = str(user_data['RP']))
+            embed.add_field(name = 'Silver Serpents', value = str(user_data['RP']))
             embed.add_field(name = 'Lifetime Score', value = str(user_data['Score']))
             embed.set_thumbnail(url = (await league_rank(score))[1])
             await ctx.channel.send(embed=embed)
@@ -244,8 +315,6 @@ async def on_message(ctx):
                         await ctx.channel.send(f'You do not own {following[1].capitalize()}')
             except:
                 await ctx.channel.send(f'Wrong Usage of Command')
-        elif following.lower().startwith('guess bio'):
-            await guess_bio()
         else:
             if storage != []:
                 await ctx.channel.send(f'Command does not exist.')
@@ -378,13 +447,16 @@ async def buy_item(ctx, item):
             await shop_builder(ctx, 'Pocket Death Realm', user_data, 250)
         elif item.lower() == 'skin transmogrifier':
             await shop_builder(ctx, 'Skin Transmogrifier', user_data, 1000)
+        elif item.lower() == 'incense':
+            await shop_builder(ctx, 'Incense', user_data, 600)
         else:
             raise SadError
+        
         embed= discord.Embed(title='Successful buy', description = f'you have bought a {item.capitalize()}', color=0x274F13)
         embed.set_thumbnail(url = 'https://static.wikia.nocookie.net/leagueoflegends/images/0/00/Oh_Darn_Emote.png/revision/latest/scale-to-width-down/256?cb=20171120233634')
         await ctx.channel.send(embed=embed)
     except ValueError:
-        message = "You don't have enough RP on this account, ask mother for more"
+        message = "You don't have enough Silver Serpents[RP] on this account, ask mother for more"
         message += "\nYou have {} rp".format(user_data["RP"])
         await ctx.channel.send(message)
     except SadError:
@@ -393,7 +465,7 @@ async def buy_item(ctx, item):
 
 async def guess_champ(ctx):
     champ = random.choice(list(champ_ids.keys()))
-    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
+    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.16.1/data/en_US/champion/{champ}.json') as f:
         champion = json.loads(f.read().decode('utf-8'))
         
     embed = discord.Embed(title = 'Guess this Champion', color=0x00eaff)
@@ -402,17 +474,17 @@ async def guess_champ(ctx):
     return champion['data'][champ]['name']
 
 async def guess_item(ctx):
-    with urllib.request.urlopen('https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/item.json') as f:
+    with urllib.request.urlopen('https://ddragon.leagueoflegends.com/cdn/11.16.1/data/en_US/item.json') as f:
         data = json.loads(f.read().decode('utf-8'))
         item = random.choice(list(data["data"].keys()))
     embed = discord.Embed(title = 'Guess this Item', color=0x00eaff)
-    embed.set_image(url=f"https://ddragon.leagueoflegends.com/cdn/11.12.1/img/item/{item}.png")
+    embed.set_image(url=f"https://ddragon.leagueoflegends.com/cdn/11.16.1/img/item/{item}.png")
     await ctx.channel.send(embed=embed)
     return data["data"][item]['name']
 
 async def guess_skin(ctx):
     champ = random.choice(list(champ_ids.keys()))
-    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
+    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.16.1/data/en_US/champion/{champ}.json') as f:
         champ_file = json.loads(f.read().decode('utf-8'))
     skin = random.choice(champ_file['data'][champ]['skins'][1:])
     skin_name = skin['name']
@@ -424,22 +496,22 @@ async def guess_skin(ctx):
 
 async def guess_ability(ctx):
     champ = random.choice(list(champ_ids.keys()))
-    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
+    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.16.1/data/en_US/champion/{champ}.json') as f:
         champ_file = json.loads(f.read().decode('utf-8'))
     ability = random.choice(champ_file['data'][champ]['spells'])
     ability_name = ability['name']
     ability_id = ability['id']
     embed = discord.Embed(title = 'Guess this Ability', color=0x00eaff)
-    embed.set_image(url=f'http://ddragon.leagueoflegends.com/cdn/11.13.1/img/spell/{ability_id}.png')
+    embed.set_image(url=f'http://ddragon.leagueoflegends.com/cdn/11.16.1/img/spell/{ability_id}.png')
     await ctx.channel.send(embed=embed)
     return ability_name
 
 async def guess_bio(ctx):
     champ = random.choice(list(champ_ids.keys()))
-    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
+    with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.16.1/data/en_US/champion/{champ}.json') as f:
         champion = json.loads(f.read().decode('utf-8'))
     message = champion['data'][champ]['blurb']
-    message = 'ChampName'.join(message.split(champ))
+    message = 'ChampName'.join(message.split(champion['data'][champ]['name']))
     embed = discord.Embed(title = 'Guess this Bio', description= f'{message}', color=0x00eaff)
     embed.set_image(url = 'https://64.media.tumblr.com/1317bb1da54f21509ef502bc55364660/tumblr_o01uux6ZB21ugaq3to1_1280.jpg')
     await ctx.channel.send(embed=embed)
@@ -450,7 +522,8 @@ async def summon(ctx, type, lucky = False):
     if type == 'Lucky': lucky = True
     while found_type == False:
         champ = random.choice(list(champ_ids.keys()))
-        with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
+        print(champ)
+        with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.16.1/data/en_US/champion/{champ}.json') as f:
             champ_file = json.loads(f.read().decode('utf-8'))
             if type in champ_file['data'][champ]['tags'] or lucky == True:
                 found_type = True
@@ -469,12 +542,16 @@ async def summon(ctx, type, lucky = False):
         skin_name = champ
     else:
         skin_name = skin['name']
-
     skin_id = skin['num']
+
+    embed = discord.Embed(title = f'You Found: {skin_name}', description = 'What ability would you like to use?', color=0x00eaff)
+    embed.set_image(url='https://static.wikia.nocookie.net/leagueoflegends/images/a/af/KDA_Orb_Opening.gif')
+    message = await ctx.channel.send(embed=embed)
+    await asyncio.sleep(2.5)
     embed = discord.Embed(title = f'You Found: {skin_name}', description = 'What ability would you like to use?', color=0x00eaff)
     embed.set_image(url=f'https://ddragon.leagueoflegends.com/cdn/img/champion/loading/{champ}_{skin_id}.jpg')
     embed.set_footer(text = 'Everyone has unlimited uses on exhaust')
-    await ctx.channel.send(embed=embed)
+    await message.edit(embed = embed)
     return (champ, skin_id, skin_name)
 
 
@@ -492,6 +569,61 @@ async def check_item(ctx, item):
         return True, item
     else:
         return False, False
+async def insult(ctx, person):
+    person = f'<@!{person}>'
+    insults = {
+    '1': f' PSYCHOPATH ALERT: {person} is a mentally unstable, and their desk sees more abuse than Michael Vick\'s dogs',
+    '2': f' Hello there {person}, you are very special, because you\'re the first person I\'ve known to fail the second grade, WAHOO',
+    '3': ' I am of Christian belief, but you make me believe that human did come from apes',
+    '4': ' I recommend loosening your helmet two notches, gotta get some bloodflow up there',
+    '5': 'You are a fiend and a coward, and you have bad breath. You are degenerate, noxious and depraved. I feel debased just for knowing you exist. I despise everything about you. You are a bloody nardless newbie twit protohominid chromosomally aberrant caricature of a coprophagic cloacal parasitic pond scum and I wish you would go away.',
+    '6': ' Hey look I\'ve found someone with a PH level greater than 14',
+    '7': ' you look like a if all the Lord of the Rings interbred, with the toe hair of a hobbit, the stomach of a dwarf, and the dry skin of a dragon',
+    '8': ' *Beep* Scanning Complete: Must be an Overwatch player, {person} smells',
+    '8': f" are you trying to get the role of the Hutch Back of Notre Dame. Oh, that\'s your normal posture",
+    '9': f" you have two brain cells and they are both currently competing for third place",
+    '10': f" needs to go to everyone's funeral so {person} can let everyone down one last time",
+    '11': f" You have a single digit win rate and I dont even think you deserve that",
+    '12': f" you have made me pro choice with the way you play",
+    '13': f" We finally found the reason of Epstein\'s death, and its {person}",
+    '14': f" you suck",
+    '15': f" I\'m suprised that raccoons aren't attracted to you, all you do is spout trash",
+    '16': f" never knew you can be in debt with LP ",
+    '17': f" I\'ve shit smarter things than you",
+    '18': 'I have nevew seen anyone mowe toxic than you in my entiwe wife. See you whenevew you decide to change. This huwt me to wwite as it\'s the meanest thing I\'ve said in a vewy wong time but it had to be done. Goodbye.',
+    '19': f" You unironically have to play amongus us public lobbies because you have no friends",
+    '20': f" *sigh* just *sigh*",
+    '21': f" *Aggressively dry humps your leg* yeah, thats the most action you\'ll ever get"
+    }
+    message = person + random.choice(list(insults.values())) 
+    await ctx.channel.send(message)
+
+async def pick_game(ctx):
+    games = {
+        '1' : 'League of Legends',
+        '2' : 'Valorant',
+        '3' : 'Muck',
+        '4' : 'Terraria',
+        '5' : 'Fall Guys',
+        '6' : 'Minecraft - Hypixel',
+        '7' : 'Minecraft - Server',
+        '9' : 'Shiba Has to verbally decide the game',
+        '10' : 'Legends of Runeterra',
+        '11' : 'Don\'t Starve together',
+        '12' : 'Pummel Party',
+        '13' : 'Overcooked 2',
+        '14' : 'Tabletop Simulator',
+        '15' : 'Find the next big game',
+        '16' : 'Roll again Shiba',
+        '17' : 'Shiba Has to verbally decide the game',
+        '18' : 'Shiba Has to verbally decide the game',
+        '19' : 'Shiba Has to verbally decide the game',
+        '20' : 'Shiba Has to verbally decide the game',
+        '21' : 'Shiba Has to verbally decide the game',
+        '22' : 'Shiba Has to verbally decide the game'
+    }
+    message = 'King Shiba has decided ' + random.choice(list(games.values())) 
+    await ctx.channel.send(message)
 
 async def attempt_catch(ctx, skin_data, ability = False):
     if ability == False:
@@ -549,7 +681,7 @@ async def check_champ(ctx, champ):
         updated = user_data['Champs_Owned']
         del[updated[lower[champ.lower()]]]
 
-        with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.12.1/data/en_US/champion/{champ}.json') as f:
+        with urllib.request.urlopen(f'https://ddragon.leagueoflegends.com/cdn/11.16.1/data/en_US/champion/{champ}.json') as f:
             champ_file = json.loads(f.read().decode('utf-8'))
         skin = random.choice(champ_file['data'][champ]['skins'][1:])
         skin_data = (champ, skin['num'], skin['name'])
